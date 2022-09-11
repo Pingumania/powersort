@@ -1,8 +1,8 @@
 ### CONFIG
 
 param (
-    [string]$path = "U:\",
-    [string]$destination = "U:\",
+    [string]$path = "U:",
+    [string]$destination = "U:",
     [switch]$whatif
 )
 
@@ -57,15 +57,17 @@ if (!(Test-Path -LiteralPath $destination)) {
     Exit
 }
 
+$sourceFolderDepth = ($path -split "\\").count
+
 $extensionFilter = @($extensionMappings.Keys | ForEach-Object {"$_" })
 $extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys | ForEach-Object {"$_" })
 $extensionFilterDelete = @($extensionMappingsToDelete | ForEach-Object {"$_" })
 $filesToMove = @(Get-ChildItem -LiteralPath $path -Recurse `
-    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[1]) } `
+    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[$sourceFolderDepth]) } `
     | Where-Object { ! $_.PSIsContainer } `
     | Where-Object { $extensionFilter -contains $_.Extension })
 $filesToMoveHighPrio = @(Get-ChildItem -LiteralPath $path -Recurse `
-    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[1]) } `
+    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[$sourceFolderDepth]) } `
     | Where-Object { ! $_.PSIsContainer } `
     | Where-Object { $extensionFilterHighPrio -contains $_.Extension })
 $filesToMove = [array]$filesToMoveHighPrio + [array]$filesToMove
@@ -89,7 +91,7 @@ foreach ($file in $filesToMove)
     
     # Get subfolders
     $fileSubFolder = (($file.FullName -split "\\"))
-    $fileSubFolderCount = (($file.FullName -split "\\").count - 2)
+    $fileSubFolderCount = (($file.FullName -split "\\").count - ($sourceFolderDepth + 1))
     
     # Keep some files in other categories
     if ($mapping -and $mapping.keepWith -and ($fileSubFolder -notcontains "Verschiedene Dateien" -and $fileSubFolderCount -ge 0)) 
@@ -223,10 +225,10 @@ foreach ($file in $filesToMove)
 
 # Delete all files not moved and in our filter
 $scanFilesToDelete = Get-ChildItem -LiteralPath $path -Recurse `
-    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
+    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[$sourceFolderDepth]) } `
     | Where-Object { ! $_.PSIsContainer } `
     | Where-Object { $extensionFilterDelete -contains $_.Extension }
-    
+
 $filesToDelete = [array]$filesToDelete + $scanFilesToDelete
 
 foreach ($file in $filesToDelete) 
@@ -246,7 +248,7 @@ $foldersToDelete = @()
 
 foreach ($folder in (Get-ChildItem -LiteralPath $path -Recurse `
     | Where-Object { $_.PSIsContainer } `
-    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[2]) }))
+    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[$sourceFolderDepth]) }))
 {
     $foldersToDelete += New-Object PSObject -Property @{
         Object = $folder
