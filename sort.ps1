@@ -1,12 +1,9 @@
 ### CONFIG
 
-$filter = "Alle"
-$filter = Read-Host -Prompt "Welche Kategorie soll sortiert werden? (Bilder, Diverses, Filme, Musik, Programme, Serien, Spiele, Video, Alle)"
-
 $path = "D:\complete\"
 $destination = "D:\complete"
 $passThru = 1
-$whatif = 0
+$whatif = 1
 
 $extensionMappings = @{
     ".mp3" = @{ category = "Musik" }
@@ -30,7 +27,7 @@ $extensionMappings = @{
     ".srt" = @{ category = "Video"; keepWith = @(".mkv"); keepWithout = 0; }
     ".nfo" = @{ category = "Video"; keepWith = @(".mkv"); keepWithout = 0; }
     ".pdf" = @{ category = "Diverses" }
-    ".txt" = @{ category = "Diverses"; keepWith = @(".exe", ".msi"); keepWithout = 1; }
+    ".txt" = @{ category = "Diverses"; keepWith = @(".exe", ".msi"); keepWithout = 0; }
 }
 
 $extensionMappingsHighPrio = @{
@@ -41,22 +38,33 @@ $extensionMappingsHighPrio = @{
     ".rar" = @{ category = "Programme"; keepWith = @(".exe", ".msi"); skipWithout = 1; }
 }
 
-$extensionMappingsToDelete = @(".html", ".gif", ".url", ".m3u", ".par2", ".sfv", ".lnk", ".info", ".cue", ".log", ".diz")
+$extensionMappingsToDelete = @(".html", ".gif", ".url", ".m3u", ".par2", ".sfv", ".lnk", ".info", ".cue", ".log", ".diz", ".rtf")
 $rootFolder = @("Bilder", "Diverses", "Filme", "Musik", "Programme", "Serien", "Spiele", "Video")
+$specialFolder = @("Verschiedene Dateien")
 
 ### SCRIPT
 
+if (!(Test-Path -LiteralPath $path)) {
+    Exit
+}
+if (!(Test-Path -LiteralPath $destination)) {
+    Exit
+}
+
 $extensionFilter = @($extensionMappings.Keys |% {"$_" })
 $extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys |% {"$_" })
+$extensionFilterDelete = @($extensionMappingsToDelete |% {"$_" })
 $filesToMove = @(Get-ChildItem -LiteralPath $path -Recurse `
-    |? { $rootFolder -notcontains (($_ -split "\\")[2]) }) `
+    |? { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
     |? { ! $_.PSIsContainer } `
-    |? { $extensionFilter -contains $_.Extension }
+    |? { $extensionFilter -contains $_.Extension })
 $filesToMoveHighPrio = @(Get-ChildItem -LiteralPath $path -Recurse `
-    |? { $rootFolder -notcontains (($_ -split "\\")[2]) }) `
+    |? { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
     |? { ! $_.PSIsContainer } `
-    |? { $extensionFilterHighPrio -contains $_.Extension }
+    |? { $extensionFilterHighPrio -contains $_.Extension })
 $filesToMove = [array]$filesToMoveHighPrio + [array]$filesToMove
+
+Write-Output $filesToMove
 
 foreach ($file in $filesToMove)
 {
@@ -74,15 +82,15 @@ foreach ($file in $filesToMove)
     if (-not $category) { $category = "Diverses" }
     
     # Get subfolders
-    $fileSubFolder = (($file -split "\\")[2..(($file -split "\\").count -2)])
-    $fileSubFolderCount = (($file -split "\\").count -3)
+    $fileSubFolder = (($file.FullName -split "\\")[2..(($file.FullName -split "\\").count -2)])
+    $fileSubFolderCount = (($file.FullName -split "\\").count -3)
     
     # Keep some files in other categories
-    if ($mapping -and $mapping.keepWith -and ($fileSubFolder[0] -ne "Verschiedene Dateien") -and $fileSubFolderCount -eq 1) 
+    if ($mapping -and $mapping.keepWith -and ($fileSubFolder[0] -ne "Verschiedene Dateien" -and $fileSubFolderCount -eq 1)) 
     {
         # Look for a sibling in the same folder but different extension
         $sibling = $filesToMove |? { $_.Extension -notmatch $file.Extension} `
-            |? { $file.FullName -like (Split-Path -LiteralPath $_.FullName -parent)+"*" } `
+            |? { $file.FullName -like (Split-Path -LiteralPath $_.FullName)+"*" } `
             |? { $mapping.keepWith -contains $_.Extension } `
             | Select -First 1
 
@@ -92,7 +100,7 @@ foreach ($file in $filesToMove)
             $siblingCategory = $extensionMappings[$sibling.Extension].category
             $category = if ($siblingCategory) { $siblingCategory } else { $category }
         } elseif ($mapping.keepWithout -eq 0) {
-            Remove-Item -LiteralPath $file -Force
+            Remove-Item -LiteralPath $file.FullName -Force
             continue
         } elseif ($mapping.skipWithout -eq 1) {
             continue
@@ -103,11 +111,6 @@ foreach ($file in $filesToMove)
     if ($file.Extension -eq ".mkv" -and $sibling) { $category = "Filme" }
     if ($file.Extension -eq ".nfo" -and $sibling) { $category = "Filme" }
     if ($file.BaseName -match "S\d{2}E\d{2}" -or $file.BaseName -match "One Piece") { $category = "Serien" }
-
-    if (($category -ne $filter) -and ($filter -ne "Alle"))
-    {
-        continue
-    }
 
     # Default paths
     $destinationSubFolder = $file.Directory.ToString().Replace($path, "")
@@ -120,7 +123,7 @@ foreach ($file in $filesToMove)
             $destinationFile = Join-Path $destinationCategoryPath $file.Name
             if ($fileSubFolder -eq "img" -and $fileSubFolderCount -gt 1 -and $extensionMappings.Keys -contains "."+(($file.BaseName -split "\.")[1]))
             {
-                Remove-Item -LiteralPath $file -Force
+                Remove-Item -LiteralPath $file.FullName -Force
                 continue
             }
             if ($fileSubFolder[0] -eq "Verschiedene Dateien" -and $fileSubFolderCount -gt 1) 
@@ -190,17 +193,17 @@ foreach ($file in $filesToMove)
 
     # Check if file already exists:
     $num=1
-    while ((Test-Path -LiteralPath $destinationFile) -and (Test-Path -LiteralPath $file)) {   
+    while ((Test-Path -LiteralPath $destinationFile) -and (Test-Path -LiteralPath $file.FullName)) {   
         # Compare the files if they are the same
         if ((Get-FileHash $destinationFile).Hash -eq (Get-FileHash $file).Hash) {
-            Remove-Item -LiteralPath $file -Force # If they are the same delete the source file
+            Remove-Item -LiteralPath $file.FullName -Force # If they are the same delete the source file
         } else {
             # If they are not the same add a suffix to it
             $destinationFile = Join-Path $destinationCategoryPath ($file.BaseName + "_$num" + $file.Extension)
             $num+=1
         }
     }
-    if (Test-Path -LiteralPath $file) {
+    if (Test-Path -LiteralPath $file.FullName) {
         if ($whatif) {
             $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru -whatif
         } else {
@@ -213,12 +216,14 @@ foreach ($file in $filesToMove)
 }
 
 # Delete all files not moved and in our filter
-$extensionDeleteFilter = @($extensionMappingsToDelete |% {"*$_" })
-$filesToDelete = Get-ChildItem -LiteralPath $path -Recurse -Include $extensionDeleteFilter |? { $rootFolder -notcontains (($_ -split "\\")[2]) }
+$filesToDelete = Get-ChildItem -LiteralPath $path -Recurse `
+    |? { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
+    |? { ! $_.PSIsContainer } `
+    |? { $extensionFilterDelete -contains $_.Extension }
 
 foreach ($file in $filesToDelete) 
 {
-    if (Test-Path -literalPath $file) {
+    if (Test-Path -LiteralPath $file.FullName) {
         $deletedFile = Remove-Item -LiteralPath $file.FullName -Force
     }
     if ($passThru) { 
@@ -229,7 +234,9 @@ foreach ($file in $filesToDelete)
 # Delete all empty folders
 $foldersToDelete = @()
 
-foreach ($folder in (Get-ChildItem -LiteralPath $path -Recurse |? { $_.PSIsContainer -and $rootFolder -notcontains (($_ -split "\\")[2]) }))
+foreach ($folder in (Get-ChildItem -LiteralPath $path -Recurse `
+    |? { $_.PSIsContainer } `
+    |? { $rootFolder -notcontains (($_.FullName -split "\\")[2]) }))
 {
     $foldersToDelete += New-Object PSObject -Property @{
         Object = $folder
