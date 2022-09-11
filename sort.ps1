@@ -8,16 +8,14 @@ $destination = "D:\complete"
 $passThru = 1
 $whatif = 0
 
-$Logfile = "D:\Logs\$(gc env:computername)_$.log"
-
 $extensionMappings = @{
     ".mp3" = @{ category = "Musik" }
     ".flac" = @{ category = "Musik" }
     ".wav" = @{ category = "Musik" }
-    ".jpg" = @{ category = "Bilder"; keepWith = @(".mp3", ".flac", ".exe", ".msi"); keepWithout = 1; }
-    ".jpeg" = @{ category = "Bilder"; keepWith = @(".mp3", ".flac", ".exe", ".msi"); keepWithout = 1; }
-    ".png" = @{ category = "Bilder"; keepWith = @(".mp3", ".flac", ".exe", ".msi"); keepWithout = 1; }
-    ".gif" = @{ category = "Bilder"; keepWith = @(".mp3", ".flac", ".exe", ".msi"); keepWithout = 1; }
+    ".jpg" = @{ category = "Bilder"; keepWith = @(".mp3", ".flac"); keepWithout = 1; }
+    ".jpeg" = @{ category = "Bilder"; keepWith = @(".mp3", ".flac"); keepWithout = 1; }
+    ".png" = @{ category = "Bilder"; keepWith = @(".mp3", ".flac"); keepWithout = 1; }
+    ".gif" = @{ category = "Bilder"; keepWith = @(".mp3", ".flac"); keepWithout = 1; }
     ".mp4" = @{ category = "Video" }
     ".mkv" = @{ category = "Video"; keepWith = @(".nfo"); keepWithout = 1; }
     ".wmv" = @{ category = "Video" }
@@ -32,6 +30,7 @@ $extensionMappings = @{
     ".srt" = @{ category = "Video"; keepWith = @(".mkv"); keepWithout = 0; }
     ".nfo" = @{ category = "Video"; keepWith = @(".mkv"); keepWithout = 0; }
     ".pdf" = @{ category = "Diverses" }
+    ".txt" = @{ category = "Diverses"; keepWith = @(".exe", ".msi"); keepWithout = 1; }
 }
 
 $extensionMappingsHighPrio = @{
@@ -47,19 +46,12 @@ $rootFolder = @("Bilder", "Diverses", "Filme", "Musik", "Programme", "Serien", "
 
 ### SCRIPT
 
-Function Write-Log {
-   Param ([string]$logstring)
-
-   Add-content $Logfile -value $logstring
-}
-
 $extensionFilter = @($extensionMappings.Keys |% {"*$_" })
 $extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys |% {"*$_" })
-$filesToMove = @(Get-ChildItem -Path $path -Recurse -Include $extensionFilter |? { $rootFolder -notcontains (($_ -split "\\")[2]) })
-$filesToMoveHighPrio = @(Get-ChildItem -Path $path -Recurse -Include $extensionFilterHighPrio |? { $rootFolder -notcontains (($_ -split "\\")[2]) })
+$filesToMove = @(Get-ChildItem -LiteralPath $path -Recurse -Include $extensionFilter |? { $rootFolder -notcontains (($_ -split "\\")[2]) })
+$filesToMoveHighPrio = @(Get-ChildItem -LiteralPath $path -Recurse -Include $extensionFilterHighPrio |? { $rootFolder -notcontains (($_ -split "\\")[2]) })
 $filesToMove = [array]$filesToMoveHighPrio + [array]$filesToMove
 
-Write-Log "Moved Files:"
 foreach ($file in $filesToMove)
 {
     # Make sure the right category is used
@@ -75,12 +67,16 @@ foreach ($file in $filesToMove)
     # Fallback if no category is set, should not be triggered
     if (-not $category) { $category = "Diverses" }
     
+    # Get subfolders
+    $fileSubFolder = (($file -split "\\")[2..(($file -split "\\").count -2)])
+    $fileSubFolderCount = (($file -split "\\").count -3)
+    
     # Keep some files in other categories
-    if ($mapping -and $mapping.keepWith) 
+    if ($mapping -and $mapping.keepWith -and ($fileSubFolder[0] -ne "Verschiedene Dateien") -and $fileSubFolderCount -eq 1) 
     {
         # Look for a sibling in the same folder but different extension
         $sibling = $filesToMove |? { $_.Extension -notmatch $file.Extension} `
-            |? { $file.FullName -like (Split-Path $_.FullName -parent)+"*" } `
+            |? { $file.FullName -like (Split-Path -LiteralPath $_.FullName -parent)+"*" } `
             |? { $mapping.keepWith -contains $_.Extension } `
             | Select -First 1
 
@@ -110,10 +106,6 @@ foreach ($file in $filesToMove)
     # Default paths
     $destinationSubFolder = $file.Directory.ToString().Replace($path, "")
     $destinationCategoryPath = Join-Path $destination $category
-
-    # Get subfolders
-    $fileSubFolder = (($file -split "\\")[2..(($file -split "\\").count -2)])
-    $fileSubFolderCount = (($file -split "\\").count -3)
 
     # Eliminate unnecessary subfolders  
     if ($fileSubFolderCount -gt 0) {
@@ -192,7 +184,7 @@ foreach ($file in $filesToMove)
 
     # Check if file already exists:
     $num=1
-    while ((Test-Path -literalPath $destinationFile) -and (Test-Path -literalPath $file)) {   
+    while ((Test-Path -LiteralPath $destinationFile) -and (Test-Path -LiteralPath $file)) {   
         # Compare the files if they are the same
         if ((Get-FileHash $destinationFile).Hash -eq (Get-FileHash $file).Hash) {
             Remove-Item -LiteralPath $file -Force # If they are the same delete the source file
@@ -202,7 +194,7 @@ foreach ($file in $filesToMove)
             $num+=1
         }
     }
-    if (Test-Path -literalPath $file) {
+    if (Test-Path -LiteralPath $file) {
         if ($whatif) {
             $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru -whatif
         } else {
@@ -211,15 +203,13 @@ foreach ($file in $filesToMove)
     }
     if ($passThru) { 
         Write-Output $movedFile 
-        Write-Log "$file > $movedFile" 
     }
 }
 
 # Delete all files not moved and in our filter
 $extensionDeleteFilter = @($extensionMappingsToDelete |% {"*$_" })
-$filesToDelete = Get-ChildItem -Path $path -Recurse -Include $extensionDeleteFilter |? { $rootFolder -notcontains (($_ -split "\\")[2]) }
+$filesToDelete = Get-ChildItem -LiteralPath $path -Recurse -Include $extensionDeleteFilter |? { $rootFolder -notcontains (($_ -split "\\")[2]) }
 
-Write-Log "Deleted Files:"
 foreach ($file in $filesToDelete) 
 {
     if (Test-Path -literalPath $file) {
@@ -227,14 +217,12 @@ foreach ($file in $filesToDelete)
     }
     if ($passThru) { 
         Write-Output $deletedFile 
-        Write-Log "$deletedFile"
     }
 }
 
 # Delete all empty folders
 $foldersToDelete = @()
 
-Write-Log "Deleted Folders:"
 foreach ($folder in (Get-ChildItem -LiteralPath $path -Recurse |? { $_.PSIsContainer -and $rootFolder -notcontains (($_ -split "\\")[2]) }))
 {
     $foldersToDelete += New-Object PSObject -Property @{
@@ -252,6 +240,5 @@ foreach ($folder in $foldersToDelete)
     }
     if ($passThru) { 
         Write-Output $deletedFolder 
-        Write-Log "$deletedFolder"
     }
 }
