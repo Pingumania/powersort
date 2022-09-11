@@ -1,9 +1,14 @@
 ### CONFIG
 
-$path = "U:\"
-$destination = "U:\"
-$passThru = 1
-$whatif = 0
+param (
+    [string]$path = "U:\",
+    [string]$destination = "U:\",
+    [switch]$output,
+    [switch]$whatif
+)
+
+Write-Output $output
+Write-Output $whatif
 
 $extensionMappings = @{
     ".mp3" = @{ category = "Musik" }
@@ -56,7 +61,7 @@ if (!(Test-Path -LiteralPath $destination)) {
     Exit
 }
 
-$extensionFilter = @($extensionMappings.Keys |ForEach-Object {"$_" })
+$extensionFilter = @($extensionMappings.Keys | ForEach-Object {"$_" })
 $extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys | ForEach-Object {"$_" })
 $extensionFilterDelete = @($extensionMappingsToDelete | ForEach-Object {"$_" })
 $filesToMove = @(Get-ChildItem -LiteralPath $path -Recurse `
@@ -209,13 +214,13 @@ foreach ($file in $filesToMove)
         }
     }
     if (Test-Path -LiteralPath $file.FullName) {
-        if ($whatif) {
+        if ($whatif -eq $true) {
             $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru -whatif
         } else {
             $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru
         }
     }
-    if ($passThru) { 
+    if ($output -eq $true) { 
         Write-Output $movedFile 
     }
 }
@@ -231,7 +236,7 @@ foreach ($file in $filesToDelete)
     if (Test-Path -LiteralPath $file.FullName) {
         $deletedFile = Remove-Item -LiteralPath $file.FullName -Force
     }
-    if ($passThru) { 
+    if ($output -eq $true) { 
         Write-Output $deletedFile 
     }
 }
@@ -256,7 +261,7 @@ foreach ($folder in $foldersToDelete)
     { 
         $deletedFolder = Remove-Item -LiteralPath $folder.Object.FullName
     }
-    if ($passThru) { 
+    if ($output -eq $true) { 
         Write-Output $deletedFolder 
     }
 }
