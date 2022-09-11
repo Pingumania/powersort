@@ -205,8 +205,7 @@ foreach ($file in $filesToMove)
     $num=1
     while ((Test-Path -LiteralPath $destinationFile) -and (Test-Path -LiteralPath $file.FullName)) {   
         # Compare the files if they are the same
-        if ((Get-FileHash $destinationFile).Hash -eq (Get-FileHash $file).Hash) {
-            Remove-Item -LiteralPath $file.FullName -Force # If they are the same delete the source file
+        if ((Get-FileHash $destinationFile).Hash -eq (Get-FileHash $file.FullName).Hash) {
         } else {
             # If they are not the same add a suffix to it
             $destinationFile = Join-Path $destinationCategoryPath ($file.BaseName + "_$num" + $file.Extension)
