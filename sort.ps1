@@ -1,9 +1,9 @@
 ### CONFIG
 
-$path = "D:\complete\"
-$destination = "D:\complete"
+$path = "U:\"
+$destination = "U:\"
 $passThru = 1
-$whatif = 1
+$whatif = 0
 
 $extensionMappings = @{
     ".mp3" = @{ category = "Musik" }
@@ -25,22 +25,27 @@ $extensionMappings = @{
     ".divx" = @{ category = "Video" }
     ".mpeg" = @{ category = "Video" }
     ".srt" = @{ category = "Video"; keepWith = @(".mkv"); keepWithout = 0; }
-    ".nfo" = @{ category = "Video"; keepWith = @(".mkv"); keepWithout = 0; }
+    ".nfo" = @{ category = "Video"; keepWith = @(".mkv", ".flac"); keepWithout = 0; }
     ".pdf" = @{ category = "Diverses" }
     ".txt" = @{ category = "Diverses"; keepWith = @(".exe", ".msi"); keepWithout = 0; }
+    ".apk" = @{ category = "Programme" }
+    ".ct" = @{ category = "Programme" }
+    ".sh" = @{ category = "Programme" }
 }
 
 $extensionMappingsHighPrio = @{
     ".msi" = @{ category = "Programme" }
     ".exe" = @{ category = "Programme" }
+    ".iso" = @{ category = "Programme" }
     ".zip" = @{ category = "Programme"; keepWith = @(".exe", ".msi"); skipWithout = 1; }
     ".7zip" = @{ category = "Programme"; keepWith = @(".exe", ".msi"); skipWithout = 1; }
     ".rar" = @{ category = "Programme"; keepWith = @(".exe", ".msi"); skipWithout = 1; }
+    ".7z" = @{ category = "Programme"; keepWith = @(".exe", ".msi"); skipWithout = 1; }
 }
 
-$extensionMappingsToDelete = @(".html", ".gif", ".url", ".m3u", ".par2", ".sfv", ".lnk", ".info", ".cue", ".log", ".diz", ".rtf")
-$rootFolder = @("Bilder", "Diverses", "Filme", "Musik", "Programme", "Serien", "Spiele", "Video")
-$specialFolder = @("Verschiedene Dateien")
+$extensionMappingsToDelete = @(".html", ".gif", ".url", ".par2", ".lnk", ".info", ".diz", ".rtf")
+$rootFolder = @("Bilder", "Diverses", "Filme", "Musik", "Programme", "Serien", "Spiele", "Video", "_incomplete")
+#$specialFolder = @("Verschiedene Dateien")
 
 ### SCRIPT
 
@@ -51,17 +56,17 @@ if (!(Test-Path -LiteralPath $destination)) {
     Exit
 }
 
-$extensionFilter = @($extensionMappings.Keys |% {"$_" })
-$extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys |% {"$_" })
-$extensionFilterDelete = @($extensionMappingsToDelete |% {"$_" })
+$extensionFilter = @($extensionMappings.Keys |ForEach-Object {"$_" })
+$extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys | ForEach-Object {"$_" })
+$extensionFilterDelete = @($extensionMappingsToDelete | ForEach-Object {"$_" })
 $filesToMove = @(Get-ChildItem -LiteralPath $path -Recurse `
-    |? { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
-    |? { ! $_.PSIsContainer } `
-    |? { $extensionFilter -contains $_.Extension })
+    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[1]) } `
+    | Where-Object { ! $_.PSIsContainer } `
+    | Where-Object { $extensionFilter -contains $_.Extension })
 $filesToMoveHighPrio = @(Get-ChildItem -LiteralPath $path -Recurse `
-    |? { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
-    |? { ! $_.PSIsContainer } `
-    |? { $extensionFilterHighPrio -contains $_.Extension })
+    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[1]) } `
+    | Where-Object { ! $_.PSIsContainer } `
+    | Where-Object { $extensionFilterHighPrio -contains $_.Extension })
 $filesToMove = [array]$filesToMoveHighPrio + [array]$filesToMove
 
 Write-Output $filesToMove
@@ -89,10 +94,10 @@ foreach ($file in $filesToMove)
     if ($mapping -and $mapping.keepWith -and ($fileSubFolder[0] -ne "Verschiedene Dateien" -and $fileSubFolderCount -eq 1)) 
     {
         # Look for a sibling in the same folder but different extension
-        $sibling = $filesToMove |? { $_.Extension -notmatch $file.Extension} `
-            |? { $file.FullName -like (Split-Path -LiteralPath $_.FullName)+"*" } `
-            |? { $mapping.keepWith -contains $_.Extension } `
-            | Select -First 1
+        $sibling = $filesToMove | Where-Object { $_.Extension -notmatch $file.Extension} `
+            | Where-Object { $file.FullName -like (Split-Path -LiteralPath $_.FullName) } `
+            | Where-Object { $mapping.keepWith -contains $_.Extension } `
+            | Select-Object -First 1
 
         if ($sibling)
         {
@@ -217,9 +222,9 @@ foreach ($file in $filesToMove)
 
 # Delete all files not moved and in our filter
 $filesToDelete = Get-ChildItem -LiteralPath $path -Recurse `
-    |? { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
-    |? { ! $_.PSIsContainer } `
-    |? { $extensionFilterDelete -contains $_.Extension }
+    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
+    | Where-Object { ! $_.PSIsContainer } `
+    | Where-Object { $extensionFilterDelete -contains $_.Extension }
 
 foreach ($file in $filesToDelete) 
 {
@@ -235,21 +240,21 @@ foreach ($file in $filesToDelete)
 $foldersToDelete = @()
 
 foreach ($folder in (Get-ChildItem -LiteralPath $path -Recurse `
-    |? { $_.PSIsContainer } `
-    |? { $rootFolder -notcontains (($_.FullName -split "\\")[2]) }))
+    | Where-Object { $_.PSIsContainer } `
+    | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[2]) }))
 {
     $foldersToDelete += New-Object PSObject -Property @{
         Object = $folder
         Depth = ($folder.FullName -split "\\").count
     }
 }
-$foldersToDelete = $foldersToDelete | Sort Depth -Descending
+$foldersToDelete = $foldersToDelete | Sort-Object Depth -Descending
 
 foreach ($folder in $foldersToDelete)
 {
     If ($folder.Object.GetFileSystemInfos().count -eq 0) 
     { 
-        $deletedFolder = Remove-Item -LiteralPath $folder.Object.FullName -Force
+        $deletedFolder = Remove-Item -LiteralPath $folder.Object.FullName
     }
     if ($passThru) { 
         Write-Output $deletedFolder 
