@@ -7,6 +7,8 @@ $path = "D:\complete\"
 $destination = "D:\complete"
 $passThru = 1
 
+$Logfile = "D:\Logs\$(gc env:computername)_$.log"
+
 $extensionMappings = @{
     ".mp3" = @{ category = "Musik" }
     ".flac" = @{ category = "Musik" }
@@ -44,12 +46,19 @@ $rootFolder = @("Bilder", "Diverses", "Filme", "Musik", "Programme", "Serien", "
 
 ### SCRIPT
 
+Function Write-Log {
+   Param ([string]$logstring)
+
+   Add-content $Logfile -value $logstring
+}
+
 $extensionFilter = @($extensionMappings.Keys |% {"*$_" })
 $extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys |% {"*$_" })
 $filesToMove = @(Get-ChildItem -Path $path -Recurse -Include $extensionFilter |? { $rootFolder -notcontains (($_ -split "\\")[2]) })
 $filesToMoveHighPrio = @(Get-ChildItem -Path $path -Recurse -Include $extensionFilterHighPrio |? { $rootFolder -notcontains (($_ -split "\\")[2]) })
 $filesToMove = [array]$filesToMoveHighPrio + [array]$filesToMove
 
+Write-Log "Moved Files:"
 foreach ($file in $filesToMove)
 {
     # Make sure the right category is used
@@ -180,29 +189,38 @@ foreach ($file in $filesToMove)
         }
     }
     if (Test-Path -literalPath $file) {
-		if ($whatif) {
-			$movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru -whatif
-		} else {			
-			$movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru
-		}
-	}
-    if ($passThru) { Write-Output $movedFile }
+        if ($whatif) {
+            $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru -whatif
+        } else {
+            $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru
+        }
+    }
+    if ($passThru) { 
+        Write-Output $movedFile 
+        Write-Log "$file > $movedFile" 
+    }
 }
 
 # Delete all files not moved and in our filter
 $extensionDeleteFilter = @($extensionMappingsToDelete |% {"*$_" })
 $filesToDelete = Get-ChildItem -Path $path -Recurse -Include $extensionDeleteFilter |? { $rootFolder -notcontains (($_ -split "\\")[2]) }
 
+Write-Log "Deleted Files:"
 foreach ($file in $filesToDelete) 
 {
-	if (Test-Path -literalPath $file) {
+    if (Test-Path -literalPath $file) {
         $deletedFile = Remove-Item -LiteralPath $file.FullName -Force
     }
-    if ($passThru) { Write-Output $deletedFile }
+    if ($passThru) { 
+        Write-Output $deletedFile 
+        Write-Log "$deletedFile"
+    }
 }
 
 # Delete all empty folders
 $foldersToDelete = @()
+
+Write-Log "Deleted Folders:"
 foreach ($folder in (Get-ChildItem -LiteralPath $path -Recurse |? { $_.PSIsContainer -and $rootFolder -notcontains $_.Name }))
 {
     $foldersToDelete += New-Object PSObject -Property @{
@@ -216,6 +234,10 @@ foreach ($folder in $foldersToDelete)
 {
     If ($folder.Object.GetFileSystemInfos().count -eq 0) 
     { 
-        Remove-Item -LiteralPath $folder.Object.FullName -Force
+        $deletedFolder = Remove-Item -LiteralPath $folder.Object.FullName -Force
+    }
+    if ($passThru) { 
+        Write-Output $deletedFolder 
+        Write-Log "$deletedFolder"
     }
 }
