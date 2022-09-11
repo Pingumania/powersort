@@ -1,8 +1,8 @@
 ### CONFIG
 
 param (
-    [string]$path = "U:",
-    [string]$destination = "U:",
+    [string]$path = "Y:\_unsorted",
+    [string]$destination = "Y:\_unsorted",
     [switch]$whatif
 )
 
@@ -28,7 +28,7 @@ $extensionMappings = @{
     ".srt" = @{ category = "Video"; keepWith = @(".mkv"); keepWithout = 0; }
     ".nfo" = @{ category = "Video"; keepWith = @(".mkv", ".flac"); keepWithout = 0; }
     ".pdf" = @{ category = "Diverses" }
-    ".txt" = @{ category = "Diverses"; keepWith = @(".exe", ".msi"); keepWithout = 0; }
+    ".txt" = @{ category = "Diverses"; keepWith = @(".exe", ".msi"); keepWithout = 1; }
     ".apk" = @{ category = "Programme" }
     ".ct" = @{ category = "Programme" }
     ".sh" = @{ category = "Programme" }
@@ -62,7 +62,8 @@ $sourceFolderDepth = ($path -split "\\").count
 $extensionFilter = @($extensionMappings.Keys | ForEach-Object {"$_" })
 $extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys | ForEach-Object {"$_" })
 $extensionFilterDelete = @($extensionMappingsToDelete | ForEach-Object {"$_" })
-$filesToMove = @(Get-ChildItem -LiteralPath $path -Recurse `
+$subFolders = @(Get-ChildItem -LiteralPath $path -Directory)
+$filesToMove = @(Get-ChildItem -LiteralPath $path -Include $subFolders -Recurse `
     | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[$sourceFolderDepth]) } `
     | Where-Object { ! $_.PSIsContainer } `
     | Where-Object { $extensionFilter -contains $_.Extension })
@@ -77,9 +78,9 @@ $filesToDelete = @()
 foreach ($file in $filesToMove)
 {
     # Make sure the right category is used
-    if ($extensionMappingsHighPrio[$file.Extension]) 
+    if ($extensionMappingsHighPrio[$file.Extension])
     {   
-        $mapping = $extensionMappingsHighPrio[$file.Extension] } 
+        $mapping = $extensionMappingsHighPrio[$file.Extension] }
     else 
     {
         $mapping = $extensionMappings[$file.Extension]
@@ -94,7 +95,7 @@ foreach ($file in $filesToMove)
     $fileSubFolderCount = (($file.FullName -split "\\").count - ($sourceFolderDepth + 1))
     
     # Keep some files in other categories
-    if ($mapping -and $mapping.keepWith -and ($fileSubFolder -notcontains "Verschiedene Dateien" -and $fileSubFolderCount -ge 0)) 
+    if ($mapping -and $mapping.keepWith -and ($fileSubFolder -notcontains "Verschiedene Dateien" -and $fileSubFolderCount -ge 0))
     {
         # Look for a sibling in the same folder but different extension
         $sibling = $filesToMove | Where-Object { $_.Extension -notmatch $file.Extension} `
@@ -104,7 +105,7 @@ foreach ($file in $filesToMove)
 
         if ($sibling)
         {
-            # If we found a sibling, then use its category for this file:
+            # If we found a sibling, then use its category for this file
             $siblingCategory = $extensionMappings[$sibling.Extension].category
             $category = if ($siblingCategory) { $siblingCategory } else { $category }
         } elseif ($mapping.keepWithout -eq 0) {
@@ -122,9 +123,10 @@ foreach ($file in $filesToMove)
 
     # Default paths
     $destinationSubFolder = $file.Directory.ToString().Replace($path, "")
-    $destinationCategoryPath = Join-Path $destination $category
+    # $destinationCategoryPath = Join-Path $destination $category
+    $destinationCategoryPath = Join-Path $destination ""
 
-    # Eliminate unnecessary subfolders  
+    # Eliminate unnecessary subfolders
     if ($fileSubFolderCount -gt 0) {
         if ($category -eq "Bilder") {
             # Write-Output "Kategorie Bilder"
@@ -134,7 +136,7 @@ foreach ($file in $filesToMove)
                 $filesToDelete += $file
                 continue
             }
-            if ($fileSubFolder -contains "Verschiedene Dateien" -and $fileSubFolderCount -gt 1) 
+            if ($fileSubFolder -contains "Verschiedene Dateien" -and $fileSubFolderCount -gt 1)
             {
                 $destinationFile = Join-Path $destinationCategoryPath $fileSubFolder[1]
                 for ($i=2; $i -lt $fileSubFolderCount+1; $i++) {
@@ -190,15 +192,17 @@ foreach ($file in $filesToMove)
             # Write-Output "Kategorie Video"
             if ($fileSubFolder -eq "file" -and $fileSubFolderCount -gt 1) {
                 $destinationFile = Join-Path $destinationCategoryPath ($fileSubFolder[0] + $file.Extension)
+            # } elseif ($fileSubFolder -eq "file" -and $fileSubFolderCount -gt 1) {
+            #     $destinationFile = Join-Path $destinationCategoryPath ($fileSubFolder[0] + $file.Extension)
             } else {
                 $destinationFile = Join-Path $destinationCategoryPath $file.Name
             }
         }
     } else { $destinationFile = Join-Path $destinationCategoryPath $file.Name }
 
-    # Check if file already exists:
+    # Check if file already exists
     $num=1
-    while ((Test-Path -LiteralPath $destinationFile) -and (Test-Path -LiteralPath $file.FullName)) {   
+    while ((Test-Path -LiteralPath $destinationFile) -and (Test-Path -LiteralPath $file.FullName)) {
         # Compare the files if they are the same
         if ((Get-FileHash $destinationFile).Hash -eq (Get-FileHash $file.FullName).Hash) {
             $filesToDelete += $file
@@ -220,7 +224,7 @@ foreach ($file in $filesToMove)
             $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru
         }
     }
-    Write-Output $movedFile 
+    Write-Output $movedFile
 }
 
 # Delete all files not moved and in our filter
@@ -259,9 +263,9 @@ $foldersToDelete = $foldersToDelete | Sort-Object Depth -Descending
 
 foreach ($folder in $foldersToDelete)
 {
-    If ($folder.Object.GetFileSystemInfos().count -eq 0) 
+    If ($folder.Object.GetFileSystemInfos().count -eq 0)
     { 
         $deletedFolder = Remove-Item -LiteralPath $folder.Object.FullName
     }
-    Write-Output $deletedFolder 
+    Write-Output $deletedFolder
 }
