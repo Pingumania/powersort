@@ -46,10 +46,16 @@ $rootFolder = @("Bilder", "Diverses", "Filme", "Musik", "Programme", "Serien", "
 
 ### SCRIPT
 
-$extensionFilter = @($extensionMappings.Keys |% {"*$_" })
-$extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys |% {"*$_" })
-$filesToMove = @(Get-ChildItem -LiteralPath $path -Recurse -Include $extensionFilter |? { $rootFolder -notcontains (($_ -split "\\")[2]) })
-$filesToMoveHighPrio = @(Get-ChildItem -LiteralPath $path -Recurse -Include $extensionFilterHighPrio |? { $rootFolder -notcontains (($_ -split "\\")[2]) })
+$extensionFilter = @($extensionMappings.Keys |% {"$_" })
+$extensionFilterHighPrio = @($extensionMappingsHighPrio.Keys |% {"$_" })
+$filesToMove = @(Get-ChildItem -LiteralPath $path -Recurse `
+    |? { $rootFolder -notcontains (($_ -split "\\")[2]) }) `
+    |? { ! $_.PSIsContainer } `
+    |? { $extensionFilter -contains $_.Extension }
+$filesToMoveHighPrio = @(Get-ChildItem -LiteralPath $path -Recurse `
+    |? { $rootFolder -notcontains (($_ -split "\\")[2]) }) `
+    |? { ! $_.PSIsContainer } `
+    |? { $extensionFilterHighPrio -contains $_.Extension }
 $filesToMove = [array]$filesToMoveHighPrio + [array]$filesToMove
 
 foreach ($file in $filesToMove)
