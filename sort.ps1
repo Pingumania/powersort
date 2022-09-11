@@ -3,12 +3,8 @@
 param (
     [string]$path = "U:\",
     [string]$destination = "U:\",
-    [switch]$output,
     [switch]$whatif
 )
-
-Write-Output $output
-Write-Output $whatif
 
 $extensionMappings = @{
     ".mp3" = @{ category = "Musik" }
@@ -74,7 +70,7 @@ $filesToMoveHighPrio = @(Get-ChildItem -LiteralPath $path -Recurse `
     | Where-Object { $extensionFilterHighPrio -contains $_.Extension })
 $filesToMove = [array]$filesToMoveHighPrio + [array]$filesToMove
 
-Write-Output $filesToMove
+$filesToDelete = @()
 
 foreach ($file in $filesToMove)
 {
@@ -92,11 +88,11 @@ foreach ($file in $filesToMove)
     if (-not $category) { $category = "Diverses" }
     
     # Get subfolders
-    $fileSubFolder = (($file.FullName -split "\\")[2..(($file.FullName -split "\\").count -2)])
-    $fileSubFolderCount = (($file.FullName -split "\\").count -3)
+    $fileSubFolder = (($file.FullName -split "\\"))
+    $fileSubFolderCount = (($file.FullName -split "\\").count - 2)
     
     # Keep some files in other categories
-    if ($mapping -and $mapping.keepWith -and ($fileSubFolder[0] -ne "Verschiedene Dateien" -and $fileSubFolderCount -eq 1)) 
+    if ($mapping -and $mapping.keepWith -and ($fileSubFolder -notcontains "Verschiedene Dateien" -and $fileSubFolderCount -ge 0)) 
     {
         # Look for a sibling in the same folder but different extension
         $sibling = $filesToMove | Where-Object { $_.Extension -notmatch $file.Extension} `
@@ -110,7 +106,7 @@ foreach ($file in $filesToMove)
             $siblingCategory = $extensionMappings[$sibling.Extension].category
             $category = if ($siblingCategory) { $siblingCategory } else { $category }
         } elseif ($mapping.keepWithout -eq 0) {
-            Remove-Item -LiteralPath $file.FullName -Force
+            $filesToDelete += $file
             continue
         } elseif ($mapping.skipWithout -eq 1) {
             continue
@@ -133,10 +129,10 @@ foreach ($file in $filesToMove)
             $destinationFile = Join-Path $destinationCategoryPath $file.Name
             if ($fileSubFolder -eq "img" -and $fileSubFolderCount -gt 1 -and $extensionMappings.Keys -contains "."+(($file.BaseName -split "\.")[1]))
             {
-                Remove-Item -LiteralPath $file.FullName -Force
+                $filesToDelete += $file
                 continue
             }
-            if ($fileSubFolder[0] -eq "Verschiedene Dateien" -and $fileSubFolderCount -gt 1) 
+            if ($fileSubFolder -contains "Verschiedene Dateien" -and $fileSubFolderCount -gt 1) 
             {
                 $destinationFile = Join-Path $destinationCategoryPath $fileSubFolder[1]
                 for ($i=2; $i -lt $fileSubFolderCount+1; $i++) {
@@ -158,7 +154,7 @@ foreach ($file in $filesToMove)
 
         if ($category -eq "Musik") {
             # Write-Output "Kategorie Musik"
-            if ($fileSubFolder[0] -eq "Verschiedene Dateien" -and $fileSubFolderCount -gt 1) {
+            if ($fileSubFolder -contains "Verschiedene Dateien" -and $fileSubFolderCount -gt 1) {
                 $destinationFile = Join-Path $destinationCategoryPath $fileSubFolder[1]
                 for ($i=2; $i -lt $fileSubFolderCount+1; $i++) {
                     $destinationFile = Join-Path $destinationFile $fileSubFolder[$i]
@@ -172,7 +168,7 @@ foreach ($file in $filesToMove)
 
         if ($category -eq "Programme") {
             # Write-Output "Kategorie Programme"
-            if ($fileSubFolder[0] -eq "Verschiedene Dateien" -and $fileSubFolderCount -gt 1) {
+            if ($fileSubFolder -contains "Verschiedene Dateien" -and $fileSubFolderCount -gt 1) {
                 $destinationFile = Join-Path $destinationCategoryPath $fileSubFolder[1]
                 for ($i=2; $i -lt $fileSubFolderCount+1; $i++) {
                     $destinationFile = Join-Path $destinationFile $fileSubFolder[$i]
@@ -198,20 +194,23 @@ foreach ($file in $filesToMove)
         }
     } else { $destinationFile = Join-Path $destinationCategoryPath $file.Name }
 
-    # Create the folder for the file:
-    New-Item (Split-Path $destinationFile -Parent) -ItemType Directory -Force | Out-Null
-
     # Check if file already exists:
     $num=1
     while ((Test-Path -LiteralPath $destinationFile) -and (Test-Path -LiteralPath $file.FullName)) {   
         # Compare the files if they are the same
         if ((Get-FileHash $destinationFile).Hash -eq (Get-FileHash $file.FullName).Hash) {
+            $filesToDelete += $file
+            break
         } else {
             # If they are not the same add a suffix to it
             $destinationFile = Join-Path $destinationCategoryPath ($file.BaseName + "_$num" + $file.Extension)
             $num+=1
         }
     }
+
+    # Create the folder for the file:
+    New-Item (Split-Path $destinationFile -Parent) -ItemType Directory -Force | Out-Null
+
     if (Test-Path -LiteralPath $file.FullName) {
         if ($whatif -eq $true) {
             $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru -whatif
@@ -219,25 +218,27 @@ foreach ($file in $filesToMove)
             $movedFile = Move-Item -LiteralPath $file.FullName -Destination $destinationFile -passThru
         }
     }
-    if ($output -eq $true) { 
-        Write-Output $movedFile 
-    }
+    Write-Output $movedFile 
 }
 
 # Delete all files not moved and in our filter
-$filesToDelete = Get-ChildItem -LiteralPath $path -Recurse `
+$scanFilesToDelete = Get-ChildItem -LiteralPath $path -Recurse `
     | Where-Object { $rootFolder -notcontains (($_.FullName -split "\\")[2]) } `
     | Where-Object { ! $_.PSIsContainer } `
     | Where-Object { $extensionFilterDelete -contains $_.Extension }
+    
+$filesToDelete = [array]$filesToDelete + $scanFilesToDelete
 
 foreach ($file in $filesToDelete) 
 {
     if (Test-Path -LiteralPath $file.FullName) {
-        $deletedFile = Remove-Item -LiteralPath $file.FullName -Force
+        if ($whatif -eq $true) {
+            $deletedFile = Remove-Item -LiteralPath $file.FullName -Force -WhatIf
+        } else {
+            $deletedFile = Remove-Item -LiteralPath $file.FullName -Force
+        }
     }
-    if ($output -eq $true) { 
-        Write-Output $deletedFile 
-    }
+    Write-Output $deletedFile 
 }
 
 # Delete all empty folders
@@ -260,7 +261,5 @@ foreach ($folder in $foldersToDelete)
     { 
         $deletedFolder = Remove-Item -LiteralPath $folder.Object.FullName
     }
-    if ($output -eq $true) { 
-        Write-Output $deletedFolder 
-    }
+    Write-Output $deletedFolder 
 }
